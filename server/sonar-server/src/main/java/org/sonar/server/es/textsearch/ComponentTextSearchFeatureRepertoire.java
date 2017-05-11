@@ -20,6 +20,7 @@
 package org.sonar.server.es.textsearch;
 
 import java.util.Arrays;
+import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -28,6 +29,7 @@ import org.apache.commons.lang.StringUtils;
 import org.elasticsearch.index.query.BoolQueryBuilder;
 import org.elasticsearch.index.query.MatchQueryBuilder;
 import org.elasticsearch.index.query.QueryBuilder;
+import org.sonar.core.util.stream.MoreCollectors;
 import org.sonar.server.es.DefaultIndexSettings;
 import org.sonar.server.es.DefaultIndexSettingsElement;
 import org.sonar.server.es.textsearch.ComponentTextSearchQueryFactory.ComponentTextSearchQuery;
@@ -35,6 +37,7 @@ import org.sonar.server.es.textsearch.ComponentTextSearchQueryFactory.ComponentT
 import static org.elasticsearch.index.query.QueryBuilders.boolQuery;
 import static org.elasticsearch.index.query.QueryBuilders.matchQuery;
 import static org.elasticsearch.index.query.QueryBuilders.termsQuery;
+import static org.sonar.server.es.DefaultIndexSettings.MINIMUM_NGRAM_LENGTH;
 import static org.sonar.server.es.DefaultIndexSettingsElement.SEARCH_GRAMS_ANALYZER;
 import static org.sonar.server.es.DefaultIndexSettingsElement.SEARCH_PREFIX_ANALYZER;
 import static org.sonar.server.es.DefaultIndexSettingsElement.SEARCH_PREFIX_CASE_INSENSITIVE_ANALYZER;
@@ -53,28 +56,41 @@ public enum ComponentTextSearchFeatureRepertoire implements ComponentTextSearchF
   },
   PREFIX(CHANGE_ORDER_OF_RESULTS) {
     @Override
-    public QueryBuilder getQuery(ComponentTextSearchQuery query) {
-      return prefixAndPartialQuery(query.getQueryText(), query.getFieldName(), SEARCH_PREFIX_ANALYZER)
+    public Stream<QueryBuilder> getQueries(ComponentTextSearchQuery query) {
+      List<String> tokens = split(query.getQueryText());
+      if (tokens.isEmpty()) {
+        return Stream.empty();
+      }
+      BoolQueryBuilder queryBuilder = prefixAndPartialQuery(tokens, query.getFieldName(), SEARCH_PREFIX_ANALYZER)
         .boost(3f);
+      return Stream.of(queryBuilder);
     }
   },
   PREFIX_IGNORE_CASE(GENERATE_RESULTS) {
     @Override
-    public QueryBuilder getQuery(ComponentTextSearchQuery query) {
+    public Stream<QueryBuilder> getQueries(ComponentTextSearchQuery query) {
       String lowerCaseQueryText = query.getQueryText().toLowerCase(Locale.getDefault());
-      return prefixAndPartialQuery(lowerCaseQueryText, query.getFieldName(), SEARCH_PREFIX_CASE_INSENSITIVE_ANALYZER)
+      List<String> tokens = split(lowerCaseQueryText);
+      if (tokens.isEmpty()) {
+        return Stream.empty();
+      }
+      BoolQueryBuilder queryBuilder = prefixAndPartialQuery(tokens, query.getFieldName(), SEARCH_PREFIX_CASE_INSENSITIVE_ANALYZER)
         .boost(2f);
+      return Stream.of(queryBuilder);
     }
   },
   PARTIAL(GENERATE_RESULTS) {
     @Override
-    public QueryBuilder getQuery(ComponentTextSearchQuery query) {
-      BoolQueryBuilder queryBuilder = boolQuery();
-      split(query.getQueryText())
+    public Stream<QueryBuilder> getQueries(ComponentTextSearchQuery query) {
+      List<String> tokens = split(query.getQueryText());
+      if (tokens.isEmpty()) {
+        return Stream.empty();
+      }
+      BoolQueryBuilder queryBuilder = boolQuery().boost(0.5f);
+      tokens.stream()
         .map(text -> tokenQuery(text, query.getFieldName(), SEARCH_GRAMS_ANALYZER))
         .forEach(queryBuilder::must);
-      return queryBuilder
-        .boost(0.5f);
+      return Stream.of(queryBuilder);
     }
   },
   KEY(GENERATE_RESULTS) {
@@ -116,17 +132,18 @@ public enum ComponentTextSearchFeatureRepertoire implements ComponentTextSearchF
     throw new UnsupportedOperationException();
   }
 
-  public static Stream<String> split(String queryText) {
+  private static List<String> split(String queryText) {
     return Arrays.stream(
       queryText.split(DefaultIndexSettings.SEARCH_TERM_TOKENIZER_PATTERN))
-      .filter(StringUtils::isNotEmpty);
+      .filter(StringUtils::isNotEmpty)
+      .filter(s -> s.length() >= MINIMUM_NGRAM_LENGTH)
+      .collect(MoreCollectors.toList());
   }
 
-  protected BoolQueryBuilder prefixAndPartialQuery(String queryText, String originalFieldName, DefaultIndexSettingsElement analyzer) {
+  protected BoolQueryBuilder prefixAndPartialQuery(List<String> tokens, String originalFieldName, DefaultIndexSettingsElement analyzer) {
     BoolQueryBuilder queryBuilder = boolQuery();
-
     AtomicBoolean first = new AtomicBoolean(true);
-    split(queryText)
+    tokens.stream()
       .map(queryTerm -> {
 
         if (first.getAndSet(false)) {
