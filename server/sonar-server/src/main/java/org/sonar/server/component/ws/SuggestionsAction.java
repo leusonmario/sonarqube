@@ -31,6 +31,8 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 import javax.annotation.Nullable;
+import org.sonar.api.resources.ResourceType;
+import org.sonar.api.resources.ResourceTypes;
 import org.sonar.api.server.ws.Change;
 import org.sonar.api.server.ws.Request;
 import org.sonar.api.server.ws.Response;
@@ -56,6 +58,7 @@ import org.sonarqube.ws.WsComponents.SuggestionsWsResponse.Suggestion;
 
 import static com.google.common.base.Preconditions.checkState;
 import static java.util.Arrays.stream;
+import static java.util.Collections.emptyList;
 import static java.util.Collections.emptySet;
 import static java.util.Collections.singletonList;
 import static java.util.Optional.ofNullable;
@@ -82,14 +85,16 @@ public class SuggestionsAction implements ComponentsWsAction {
   private final ComponentIndex index;
   private final FavoriteFinder favoriteFinder;
   private final UserSession userSession;
+  private final ResourceTypes resourceTypes;
 
   private DbClient dbClient;
 
-  public SuggestionsAction(DbClient dbClient, ComponentIndex index, FavoriteFinder favoriteFinder, UserSession userSession) {
+  public SuggestionsAction(DbClient dbClient, ComponentIndex index, FavoriteFinder favoriteFinder, UserSession userSession, ResourceTypes resourceTypes) {
     this.dbClient = dbClient;
     this.index = index;
     this.favoriteFinder = favoriteFinder;
     this.userSession = userSession;
+    this.resourceTypes = resourceTypes;
   }
 
   @Override
@@ -235,11 +240,19 @@ public class SuggestionsAction implements ComponentsWsAction {
     return Optional.empty();
   }
 
-  private static List<String> getQualifiers(@Nullable String more) {
+  private List<String> getQualifiers(@Nullable String more) {
+    Set<String> availableQualifiers = resourceTypes.getAll().stream().map(ResourceType::getQualifier).collect(MoreCollectors.toSet());
     if (more == null) {
-      return stream(SuggestionCategory.values()).map(SuggestionCategory::getQualifier).collect(Collectors.toList());
+      return stream(SuggestionCategory.values())
+        .map(SuggestionCategory::getQualifier)
+        .filter(availableQualifiers::contains)
+        .collect(Collectors.toList());
     }
-    return singletonList(SuggestionCategory.getByName(more).getQualifier());
+
+    String qualifier = SuggestionCategory.getByName(more).getQualifier();
+    return availableQualifiers.contains(qualifier) ?
+      singletonList(qualifier)
+      : emptyList();
   }
 
   private SuggestionsWsResponse.Builder buildResponse(Set<String> recentlyBrowsedKeys, Set<String> favoriteUuids, ComponentIndexResults componentsPerQualifiers,
