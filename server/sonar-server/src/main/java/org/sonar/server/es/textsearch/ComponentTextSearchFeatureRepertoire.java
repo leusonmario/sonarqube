@@ -29,6 +29,7 @@ import org.apache.commons.lang.StringUtils;
 import org.elasticsearch.index.query.BoolQueryBuilder;
 import org.elasticsearch.index.query.MatchQueryBuilder;
 import org.elasticsearch.index.query.QueryBuilder;
+import org.sonar.core.component.ComponentKeys;
 import org.sonar.core.util.stream.MoreCollectors;
 import org.sonar.server.es.DefaultIndexSettings;
 import org.sonar.server.es.DefaultIndexSettingsElement;
@@ -95,9 +96,15 @@ public enum ComponentTextSearchFeatureRepertoire implements ComponentTextSearchF
   },
   KEY(GENERATE_RESULTS) {
     @Override
-    public QueryBuilder getQuery(ComponentTextSearchQuery query) {
-      return matchQuery(SORTABLE_ANALYZER.subField(query.getFieldKey()), query.getQueryText())
-        .boost(50f);
+    public Stream<QueryBuilder> getQueries(ComponentTextSearchQuery query) {
+      String queryText = query.getQueryText();
+      if (ComponentKeys.isValidModuleKey(queryText)) {
+        MatchQueryBuilder queryBuilder = matchQuery(SORTABLE_ANALYZER.subField(query.getFieldKey()), queryText)
+          .boost(50f);
+        return Stream.of(queryBuilder);
+      } else {
+        return Stream.empty();
+      }
     }
   },
   RECENTLY_BROWSED(CHANGE_ORDER_OF_RESULTS) {
