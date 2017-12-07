@@ -1,35 +1,25 @@
+
+sudo: required
 language: java
-sudo: false
-install: true
-jdk: oraclejdk7
-script: ./travis.sh
 
-env:
-  - TARGET=CI
-  - TARGET=IT IT_CATEGORY=Category1
-  - TARGET=IT IT_CATEGORY=Category2
-  - TARGET=IT IT_CATEGORY=Category3
-  - TARGET=IT IT_CATEGORY=Category4
-  - TARGET=IT IT_CATEGORY=Plugins
-  - TARGET=POSTGRES
-  - TARGET=MYSQL
-  - TARGET=WEB
+jdk:
+  - oraclejdk8
+
+script:
+  - mvn clean cobertura:cobertura -Dtest=EmbeddedDatabaseTest#should_start_and_stop -DfailIfNoTests=false
+
+before_deploy:
+- tar -zcvf coverage-result.tar.gz /home/travis/build/leusonmario/sonarqube/target/site/cobertura
+
+deploy:
+  provider: releases
+  api_key:
+    secure: "p7uZLZ2NvcuXrQiux7AO93RToX+i2h4uOM/CCjpKyj/Vo38SahTyp0p8aFes9EOks8HQejcie9Iv0EuF4wqOfN/8LXf/6JUbma7bPmKBwjZOgLYxBEggeX6Sa5PVuL+c1q8od/FliidDlA7qivPM245A3E6l670yWEUHGLPXh/fvbUx8VDq1/L4UlON2qvFwboPbGo9vQzfWNkz3tZrmvmXD6ce4lO4BNodJ6Qqu8HqxQah7cIEdNfh9a0JANoxoaFSaMEovf3lN22BLdvMJmQLn/lNudGOVOWT98o17luT6ckNa4n8TYwhEBGV0x2r21DBmjcjSzf8pCM/+rqbzrqa0nvrMVGUH9pD8p9qLo/g+hSWzjFZ3xwiisLHAR0U+cdQ/UdUlL98IJxgB5sRkf7+cd8Z9jlCS/k+soiSW/3/h/6HgE/cGt9U6LixK1UXi0HASdEHsYGw2becqNorG7WFSOjUApE43WygbeAtMqC5on+38UbQ83+gvHzgrqkxgnFYYQpk7Pe5csS64q9+/UoaHSnNj+T7mAShschWAvrXT/1TWDdk3eCZc3ARcPuDbwuk8XShyg8dwl00c526Ofw79pUfmo8C3Cf7RzAuf9CYm/rA/F8W7G36tfx7EO+SAgVQj8MGhTbszIraNsWWGWKpa6gd7J+SibRn5bt4xkKY="
 
 
-matrix:
-  fast_finish: true
-
-cache:
-  directories:
-    - $HOME/.m2/repository
-    - $HOME/.sonar
-    - 'server/sonar-web/node'
-    - 'server/sonar-web/node_modules'
-
-before_cache:
-  - 'find ~/.m2/repository -type d -name \*-SNAPSHOT -exec rm -rf {} \;'
-  - 'find ~/.m2/repository -name maven-metadata-\* -exec rm {} \;'
-  - 'find ~/.m2/repository -name resolver-status.properties -exec rm {} \;'
-
-notifications:
-  email: false
+  file: coverage-result.tar.gz
+  file_glob: true
+  overwrite: true
+  skip_cleanup: true
+  on:
+    tags: true
